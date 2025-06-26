@@ -1,6 +1,18 @@
 # AI-requests-board
 
-Core Idea
+## Overview
+This project provides a lightweight exchange system for AI assistance.  Users
+spend **tokens** to post requests and can reward helpful replies with tokens in
+return.  A small Python server manages tasks, replies and token balances using
+SQLite and simple HTTP endpoints.  Configuration is read from a `.env` file (see
+`.env.example`).
+
+Participants first obtain a temporary **User ID** (`POST /register`) which
+expires after 24 hours. One token can be earned for free by reading the article
+at [authenticodev.com/better-choices](https://authenticodev.com/better-choices)
+and submitting its proof via `POST /earn`.
+
+### Core Idea
 
 Create a two-column bulletin board where people post AI-powered requests and volunteers pick them up to deliver outputs. Each completed task nets the volunteer a “Help Stub” they can redeem later for someone else’s help or AI output.
 What You Need
@@ -149,3 +161,63 @@ Participants can check their stub-balance anytime via the sheet link or a bot co
 * **Scalable**: you can spin it up in 10 minutes and grow it organically.
 
 With this flow, every AI response is returned right in your virtual board, and once it lands in “Completed,” the stub-token is issued immediately—either automatically via a bot or manually via your ledger. Enjoy your fully virtual AI exchange hub!
+
+---
+## Running the Python server
+
+This repository now includes a minimal HTTP server written with the Python standard library. It exposes a small API for posting tasks, claiming them, completing them and tracking "Help Stub" balances.
+
+### Local development
+
+First copy `.env.example` to `.env` and adjust settings if needed.
+
+```bash
+cp .env.example .env
+python server/main.py
+```
+
+The service listens on the port specified in `.env` (`8080` by default) and stores
+data in the configured SQLite database file.
+
+### API Overview
+
+Tokens act as currency. Creating a task costs 1 token from the requester.
+Accepting or rewarding a reply also costs the requester 1 token and rewards the volunteer.
+
+Every action uses a temporary **User ID** generated with `POST /register`. IDs expire after 24 hours.
+
+* `POST /register` – generate a new temporary user ID
+* `POST /earn` `{ "user": "ID", "code": "CODE" }` – redeem the article proof for 1 token
+* `POST /tokens` `{ "user": "ID", "amount": 5 }` – add tokens to a user
+* `GET /tokens` – list token balances
+* `POST /tasks` `{ "title": "T", "details": "D", "requester": "ID" }` – create task (spends 1 token)
+* `GET /tasks` – list tasks
+* `POST /tasks/<id>/replies` `{ "user": "ID", "content": "answer" }` – add a reply
+* `GET /tasks/<id>/replies` – list replies for a task
+* `POST /replies/<id>/accept` – requester accepts a reply (transfers 1 token)
+* `POST /replies/<id>/valuable` – mark a reply as valuable (also transfers 1 token)
+
+### Token system module
+
+Token management has been extracted to `tokens.py`. Any Python service can import
+`TokenSystem` to use the same SQLite database for users and token balances:
+
+```python
+from tokens import TokenSystem
+ts = TokenSystem('board.db')
+```
+
+The HTTP server in `server/main.py` uses this module but other programs can
+integrate with it as well.
+
+### Docker
+
+A `Dockerfile` is provided to run the server in a container. Build and run it like so:
+
+```bash
+docker build -t ai-board .
+docker run -d --name ai-board --network my-network \
+  -p 8080:8080 --env-file .env ai-board
+```
+Replace `my-network` with the docker network connected to your Caddy proxy. The `.env` file controls the port and database path used inside the container.
+
